@@ -1,19 +1,5 @@
-var a = "global a";
-var b = "global b";
-var c = "global c";
-{
-  var a = "outer a";
-  var b = "outer b";
-  {
-    var a = "inner a";
-    print a;
-    print b;
-    print c;
-  }
-  print a;
-  print b;
-  print c;
+for(var a = 0 ; a < 10000 ; a = a + 1){
+    if( a == 5000){
+        print "Hello World!";
+    }
 }
-print a;
-print b;
-print c;

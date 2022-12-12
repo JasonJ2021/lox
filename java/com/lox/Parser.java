@@ -2,6 +2,7 @@ package com.lox;
 
 import javax.naming.InitialContext;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import static com.lox.TokenType.*;
@@ -16,9 +17,10 @@ public class Parser {
     Parser(List<Token> tokens) {
         this.tokens = tokens;
     }
-    List<Stmt> parse(){
+
+    List<Stmt> parse() {
         List<Stmt> statements = new ArrayList<>();
-        while(!isAtEnd()){
+        while (!isAtEnd()) {
             statements.add(declaration());
         }
         return statements;
@@ -29,14 +31,14 @@ public class Parser {
     }
 
     private Expr assignment() {
-        Expr expr = equality();
+        Expr expr = or();
 
         if (match(EQUAL)) {
             Token equals = previous();
             Expr value = assignment();
 
             if (expr instanceof Expr.Variable) {
-                Token name = ((Expr.Variable)expr).name;
+                Token name = ((Expr.Variable) expr).name;
                 return new Expr.Assign(name, value);
             }
 
@@ -46,16 +48,42 @@ public class Parser {
         return expr;
     }
 
-    private Stmt declaration(){
-        try{
-            if(match(VAR)) return varDeclaration();
+    private Expr or() {
+        Expr expr = and();
+
+        while (match(OR)) {
+            Token operator = previous();
+            Expr right = and();
+            expr = new Expr.Logical(expr, operator, right);
+        }
+
+        return expr;
+    }
+
+    private Expr and() {
+        Expr expr = equality();
+
+        while (match(AND)) {
+            Token operator = previous();
+            Expr right = equality();
+            expr = new Expr.Logical(expr, operator, right);
+        }
+
+        return expr;
+    }
+
+
+    private Stmt declaration() {
+        try {
+            if (match(VAR)) return varDeclaration();
 
             return statement();
-        }catch (ParseError error){
+        } catch (ParseError error) {
             synchronize();
             return null;
         }
     }
+
     private Stmt varDeclaration() {
         Token name = consume(IDENTIFIER, "Expect variable name.");
 
@@ -67,13 +95,84 @@ public class Parser {
         consume(SEMICOLON, "Expect ';' after variable declaration.");
         return new Stmt.Var(name, initializer);
     }
-    private Stmt statement(){
-        if(match(PRINT)){
+
+    private Stmt statement() {
+        if (match(IF)) return ifStatement();
+        if (match(PRINT)) {
             return printStatement();
         }
-        if(match(LEFT_BRACE))return new Stmt.Block(block());
+        if (match(FOR)) return forStatement();
+        if (match(LEFT_BRACE)) return new Stmt.Block(block());
+        if (match(WHILE)) return whileStatement();
         return expressionStatement();
     }
+
+    private Stmt forStatement() {
+        consume(LEFT_PAREN, "Expect '(' after 'for'.");
+        // initializer part
+        Stmt initializer;
+        if (match(SEMICOLON)) {
+            initializer = null;
+        } else if (match(VAR)) {
+            initializer = varDeclaration();
+        } else {
+            initializer = expressionStatement();
+        }
+
+        // condition part
+        Expr condition = null;
+        if (!check(SEMICOLON)) {
+            condition = expression();
+        }
+        consume(SEMICOLON, "Expect ';' after loop condition.");
+
+        // increment part
+        Expr increment = null;
+        if (!check(RIGHT_PAREN)) {
+            increment = expression();
+        }
+        consume(RIGHT_PAREN, "Expect ')' after for clauses.");
+        Stmt body = statement();
+        if (increment != null) {
+            body = new Stmt.Block(
+                    Arrays.asList(
+                            body,
+                            new Stmt.Expression(increment)));
+        }
+
+        if (condition == null) condition = new Expr.Literal(true);
+
+        body = new Stmt.While(condition, body);
+
+        if (initializer != null) {
+            body = new Stmt.Block(Arrays.asList(initializer, body));
+        }
+        return body;
+    }
+
+    private Stmt whileStatement() {
+        consume(LEFT_PAREN, "Expect '(' after 'while'.");
+        Expr condition = expression();
+        consume(RIGHT_PAREN, "Expect ')' after condition.");
+        Stmt body = statement();
+
+        return new Stmt.While(condition, body);
+    }
+
+    private Stmt ifStatement() {
+        consume(LEFT_PAREN, "Expect '(' after 'if'.");
+        Expr condition = expression();
+        consume(RIGHT_PAREN, "Expect ')' after if condition.");
+
+        Stmt thenBranch = statement();
+        Stmt elseBranch = null;
+        if (match(ELSE)) {
+            elseBranch = statement();
+        }
+
+        return new Stmt.If(condition, thenBranch, elseBranch);
+    }
+
     private List<Stmt> block() {
         List<Stmt> statements = new ArrayList<>();
 
@@ -84,16 +183,19 @@ public class Parser {
         consume(RIGHT_BRACE, "Expect '}' after block.");
         return statements;
     }
-    private Stmt printStatement(){
+
+    private Stmt printStatement() {
         Expr value = expression();
-        consume(SEMICOLON,"Expect ';' after value.");
+        consume(SEMICOLON, "Expect ';' after value.");
         return new Stmt.Print(value);
     }
-    private Stmt expressionStatement(){
+
+    private Stmt expressionStatement() {
         Expr expr = expression();
-        consume(SEMICOLON,"Expect ';' after value.");
+        consume(SEMICOLON, "Expect ';' after value.");
         return new Stmt.Expression(expr);
     }
+
     private Expr equality() {
         Expr expr = comparision();
         while (match(BANG_EQUAL, EQUAL_EQUAL)) {
@@ -155,10 +257,10 @@ public class Parser {
             consume(RIGHT_PAREN, "Expect ')' after expression.");
             return new Expr.Grouping(expr);
         }
-        if(match(IDENTIFIER)){
+        if (match(IDENTIFIER)) {
             return new Expr.Variable(previous());
         }
-        throw error(peek() , "Expect expression.");
+        throw error(peek(), "Expect expression.");
     }
 
     private boolean match(TokenType... types) {
